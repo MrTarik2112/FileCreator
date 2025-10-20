@@ -11,8 +11,6 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
-#include <queue>
-#include <condition_variable>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -24,7 +22,29 @@
 using namespace std;
 using namespace chrono;
 
-// ANSI Color Codes - Enhanced
+// ANSI Escape Codes
+namespace ANSI {
+    const string CLEAR_LINE = "\033[2K";
+    const string CLEAR_SCREEN = "\033[2J";
+    const string CURSOR_HOME = "\033[H";
+    const string HIDE_CURSOR = "\033[?25l";
+    const string SHOW_CURSOR = "\033[?25h";
+    const string SAVE_CURSOR = "\033[s";
+    const string RESTORE_CURSOR = "\033[u";
+    
+    string moveCursor(int row, int col) {
+        return "\033[" + to_string(row) + ";" + to_string(col) + "H";
+    }
+    
+    string moveUp(int lines) {
+        return "\033[" + to_string(lines) + "A";
+    }
+    
+    string moveDown(int lines) {
+        return "\033[" + to_string(lines) + "B";
+    }
+}
+
 namespace Color {
     const string RESET = "\033[0m";
     const string BOLD = "\033[1m";
@@ -62,7 +82,7 @@ namespace Color {
     const string BG_BRIGHT_CYAN = "\033[106m";
 }
 
-// High-Performance Statistics
+// Advanced Statistics
 struct AdvancedStats {
     atomic<long long> totalBytes{0};
     atomic<double> peakSpeed{0};
@@ -90,6 +110,46 @@ struct AdvancedStats {
     }
 };
 
+// Display Manager - Prevents stacking
+class DisplayManager {
+private:
+    int progressLine = 0;
+    bool isInitialized = false;
+    mutex displayMutex;
+    
+public:
+    void initialize() {
+        lock_guard<mutex> lock(displayMutex);
+        if (!isInitialized) {
+            cout << ANSI::HIDE_CURSOR;
+            isInitialized = true;
+        }
+    }
+    
+    void cleanup() {
+        lock_guard<mutex> lock(displayMutex);
+        if (isInitialized) {
+            cout << ANSI::SHOW_CURSOR;
+            isInitialized = false;
+        }
+    }
+    
+    void clearProgress() {
+        lock_guard<mutex> lock(displayMutex);
+        cout << "\r" << ANSI::CLEAR_LINE << flush;
+    }
+    
+    void updateProgress(const string& content) {
+        lock_guard<mutex> lock(displayMutex);
+        cout << "\r" << ANSI::CLEAR_LINE << content << flush;
+    }
+    
+    void newLine() {
+        lock_guard<mutex> lock(displayMutex);
+        cout << "\n";
+    }
+};
+
 // Turbocharged File Creator
 class TurboFileCreator {
 private:
@@ -103,12 +163,9 @@ private:
     atomic<int> activeWorkers{0};
     
     AdvancedStats stats;
+    DisplayManager display;
     bool useRandomData;
-    bool useAsyncIO;
     bool turboMode;
-    
-    // Performance optimization
-    static constexpr int CACHE_LINE_SIZE = 64;
     
     void setupConsole() {
         #ifdef _WIN32
@@ -170,22 +227,47 @@ private:
 
     string generateProgressBar(float progress, int width = 50) const {
         int filled = static_cast<int>(width * progress);
-        string bar;
+        stringstream bar;
         
         for (int i = 0; i < width; i++) {
             if (i < filled) {
-                if (progress < 0.25) bar += Color::BG_BRIGHT_RED + " " + Color::RESET;
-                else if (progress < 0.50) bar += Color::BG_BRIGHT_YELLOW + " " + Color::RESET;
-                else if (progress < 0.75) bar += Color::BG_BRIGHT_CYAN + " " + Color::RESET;
-                else bar += Color::BG_BRIGHT_GREEN + " " + Color::RESET;
-            } else if (i == filled) {
-                bar += Color::BRIGHT_WHITE + "▶" + Color::RESET;
+                if (progress < 0.25) bar << Color::BG_BRIGHT_RED << " " << Color::RESET;
+                else if (progress < 0.50) bar << Color::BG_BRIGHT_YELLOW << " " << Color::RESET;
+                else if (progress < 0.75) bar << Color::BG_BRIGHT_CYAN << " " << Color::RESET;
+                else bar << Color::BG_BRIGHT_GREEN << " " << Color::RESET;
+            } else if (i == filled && filled < width) {
+                bar << Color::BRIGHT_WHITE << "▶" << Color::RESET;
             } else {
-                bar += Color::BRIGHT_BLACK + "━" + Color::RESET;
+                bar << Color::BRIGHT_BLACK << "━" << Color::RESET;
             }
         }
         
-        return bar;
+        return bar.str();
+    }
+
+    string generateSparkline(const vector<double>& data, int width = 20) const {
+        if (data.empty()) return "";
+        
+        const string blocks[] = {"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"};
+        stringstream spark;
+        
+        double maxVal = *max_element(data.begin(), data.end());
+        double minVal = *min_element(data.begin(), data.end());
+        double range = maxVal - minVal;
+        
+        if (range == 0) range = 1.0;
+        
+        int dataSize = data.size();
+        int step = max(1, dataSize / width);
+        
+        spark << Color::BRIGHT_CYAN;
+        for (int i = 0; i < min(width, dataSize); i += step) {
+            int blockIndex = static_cast<int>(((data[i] - minVal) / range) * 7);
+            spark << blocks[min(blockIndex, 7)];
+        }
+        spark << Color::RESET;
+        
+        return spark.str();
     }
 
     void displayProgress(long long current, long long total, double elapsed) {
@@ -194,48 +276,48 @@ private:
         
         stats.recordSpeed(currentSpeed);
         
-        cout << "\r" << string(150, ' ') << "\r";
+        stringstream output;
         
         // Main progress bar
-        cout << Color::BRIGHT_WHITE << "  ┃ " << Color::RESET;
-        cout << generateProgressBar(progress, 45);
-        cout << Color::BRIGHT_WHITE << " ┃" << Color::RESET;
+        output << Color::BRIGHT_WHITE << "  ┃ " << Color::RESET;
+        output << generateProgressBar(progress, 45);
+        output << Color::BRIGHT_WHITE << " ┃" << Color::RESET;
         
-        // Percentage - color coded
-        cout << " ";
-        if (progress < 0.33) cout << Color::BRIGHT_RED;
-        else if (progress < 0.66) cout << Color::BRIGHT_YELLOW;
-        else cout << Color::BRIGHT_GREEN;
-        cout << Color::BOLD << setw(6) << fixed << setprecision(2) << (progress * 100.0) << "%" << Color::RESET;
+        // Percentage
+        output << " ";
+        if (progress < 0.33) output << Color::BRIGHT_RED;
+        else if (progress < 0.66) output << Color::BRIGHT_YELLOW;
+        else output << Color::BRIGHT_GREEN;
+        output << Color::BOLD << setw(6) << fixed << setprecision(2) << (progress * 100.0) << "%" << Color::RESET;
         
         // Data transferred
-        cout << Color::BRIGHT_WHITE << " │ " << Color::RESET;
-        cout << Color::BRIGHT_CYAN << formatBytes(current) << Color::RESET;
-        cout << Color::BRIGHT_BLACK << "/" << Color::RESET;
-        cout << Color::WHITE << formatBytes(total) << Color::RESET;
+        output << Color::BRIGHT_WHITE << " │ " << Color::RESET;
+        output << Color::BRIGHT_CYAN << formatBytes(current) << Color::RESET;
+        output << Color::BRIGHT_BLACK << "/" << Color::RESET;
+        output << Color::WHITE << formatBytes(total) << Color::RESET;
         
         if (elapsed > 0.05) {
             // Speed
-            cout << Color::BRIGHT_WHITE << " │ " << Color::RESET;
-            cout << Color::BRIGHT_YELLOW << "⚡" << formatBytes(static_cast<long long>(currentSpeed)) << "/s" << Color::RESET;
+            output << Color::BRIGHT_WHITE << " │ " << Color::RESET;
+            output << Color::BRIGHT_YELLOW << "⚡" << formatBytes(static_cast<long long>(currentSpeed)) << "/s" << Color::RESET;
             
             // Status
-            cout << Color::BRIGHT_WHITE << " │ " << Color::RESET;
-            cout << getSpeedIndicator(currentSpeed, stats.avgSpeed);
+            output << Color::BRIGHT_WHITE << " │ " << Color::RESET;
+            output << getSpeedIndicator(currentSpeed, stats.avgSpeed);
             
             // Workers
-            cout << Color::BRIGHT_WHITE << " │ " << Color::RESET;
-            cout << Color::BRIGHT_MAGENTA << "🔥" << activeWorkers << "/" << numThreads << Color::RESET;
+            output << Color::BRIGHT_WHITE << " │ " << Color::RESET;
+            output << Color::BRIGHT_MAGENTA << "🔥" << activeWorkers << "/" << numThreads << Color::RESET;
             
             // ETA
-            if (progress > 0.005) {
+            if (progress > 0.005 && currentSpeed > 0) {
                 double eta = (total - current) / currentSpeed;
-                cout << Color::BRIGHT_WHITE << " │ " << Color::RESET;
-                cout << Color::BRIGHT_BLUE << "⏱" << formatDuration(eta) << Color::RESET;
+                output << Color::BRIGHT_WHITE << " │ " << Color::RESET;
+                output << Color::BRIGHT_BLUE << "⏱" << formatDuration(eta) << Color::RESET;
             }
         }
         
-        cout << flush;
+        display.updateProgress(output.str());
     }
 
     void showBanner() {
@@ -243,7 +325,7 @@ private:
         cout << Color::BOLD << Color::BRIGHT_CYAN;
         cout << "  ╔═══════════════════════════════════════════════════════════════════════╗\n";
         cout << "  ║                                                                       ║\n";
-        cout << "  ║           " << Color::BRIGHT_WHITE << "⚡⚡⚡ TURBO FILE CREATOR " << Color::BRIGHT_YELLOW << "v5.0 " << Color::BRIGHT_WHITE << "⚡⚡⚡" << Color::BRIGHT_CYAN << "              ║\n";
+        cout << "  ║           " << Color::BRIGHT_WHITE << "⚡⚡⚡ TURBO FILE CREATOR " << Color::BRIGHT_YELLOW << "v5.1 " << Color::BRIGHT_WHITE << "⚡⚡⚡" << Color::BRIGHT_CYAN << "              ║\n";
         cout << "  ║                                                                       ║\n";
         cout << "  ║     " << Color::BRIGHT_GREEN << "Ultra-Fast" << Color::BRIGHT_BLACK << " • " 
              << Color::BRIGHT_MAGENTA << "Multi-Threaded" << Color::BRIGHT_BLACK << " • "
@@ -272,7 +354,10 @@ private:
     void showDetailedStats(double totalTime) {
         stats.efficiency = stats.avgSpeed > 0 ? (stats.avgSpeed / stats.peakSpeed.load()) * 100 : 0;
         
-        cout << "\n\n";
+        display.clearProgress();
+        display.newLine();
+        
+        cout << "\n";
         cout << Color::BOLD << Color::BRIGHT_GREEN;
         cout << "  ╔═══════════════════════════════════════════════════════════════════════╗\n";
         cout << "  ║                                                                       ║\n";
@@ -328,6 +413,13 @@ private:
         else cout << Color::RED << "STANDARD" << Color::RESET;
         cout << " (" << fixed << setprecision(0) << speedMBps << " MB/s)\n";
         
+        // Sparkline
+        if (!stats.speedSamples.empty()) {
+            cout << Color::BRIGHT_WHITE << "  │\n";
+            cout << "  │  " << Color::BRIGHT_WHITE << "📈 Speed History     : ";
+            cout << generateSparkline(stats.speedSamples, 35) << "\n";
+        }
+        
         cout << Color::BRIGHT_WHITE << "  │\n";
         cout << "  ╰───────────────────────────────────────────────────────────────────╯\n";
         cout << Color::RESET << "\n";
@@ -337,11 +429,9 @@ private:
         try {
             activeWorkers++;
             
-            // Allocate aligned buffer for better performance
             size_t bufSize = static_cast<size_t>(bufferSizeMB) * 1024 * 1024;
             vector<char> buffer(bufSize);
             
-            // Fill with pattern if requested
             if (useRandomData) {
                 unsigned int seed = threadID * 123456789;
                 for (size_t i = 0; i < bufSize; i += 8) {
@@ -350,7 +440,6 @@ private:
                 }
             }
             
-            // Open file in binary mode with no buffering for max speed
             ofstream file(fileName, ios::binary | ios::in | ios::out);
             if (!file) {
                 errorFlag = true;
@@ -358,9 +447,7 @@ private:
                 return;
             }
             
-            // Disable stream buffering for direct I/O
             file.rdbuf()->pubsetbuf(nullptr, 0);
-            
             file.seekp(startPos);
             long long pos = startPos;
             
@@ -397,12 +484,10 @@ public:
           bufferSizeMB(bufferMB), useRandomData(randomData), turboMode(turbo) {
         setupConsole();
         
-        // Auto-optimize thread count
         if (numThreads <= 0) {
             numThreads = max(1u, thread::hardware_concurrency());
         }
         
-        // Turbo mode adjustments
         if (turboMode) {
             bufferSizeMB = max(bufferSizeMB, 32);
             numThreads = max(numThreads, 4);
@@ -417,11 +502,11 @@ public:
         cout << Color::BRIGHT_BLACK << "  ═══════════════════════════════════════════════════════════════════\n" << Color::RESET;
         cout << "\n";
 
-        // Pre-allocate file space (very fast on modern filesystems)
+        // Pre-allocate file
         {
             ofstream file(fileName, ios::binary);
             if (!file) {
-                cout << Color::BRIGHT_RED << "\n  ❌ ERROR: Cannot create file!\n" << Color::RESET;
+                cout << Color::BRIGHT_RED << "  ❌ ERROR: Cannot create file!\n" << Color::RESET;
                 return false;
             }
             
@@ -430,9 +515,12 @@ public:
             file.close();
         }
 
+        // Initialize display
+        display.initialize();
+
         auto startTime = steady_clock::now();
 
-        // Launch worker threads
+        // Launch workers
         vector<thread> workers;
         long long chunkSize = fileSize / numThreads;
         
@@ -444,7 +532,7 @@ public:
 
         // Monitor progress
         while (bytesWritten < fileSize && !errorFlag) {
-            this_thread::sleep_for(milliseconds(30)); // Fast refresh
+            this_thread::sleep_for(milliseconds(50));
             
             auto now = steady_clock::now();
             double elapsed = duration<double>(now - startTime).count();
@@ -452,7 +540,7 @@ public:
             displayProgress(bytesWritten.load(), fileSize, elapsed);
         }
 
-        // Wait for all workers
+        // Wait for workers
         for (auto& worker : workers) {
             if (worker.joinable()) worker.join();
         }
@@ -460,12 +548,15 @@ public:
         auto endTime = steady_clock::now();
         double totalTime = duration<double>(endTime - startTime).count();
 
+        // Cleanup display
+        display.cleanup();
+
         if (errorFlag) {
             cout << Color::BRIGHT_RED << "\n\n  ❌ ERROR: Write operation failed!\n" << Color::RESET;
             return false;
         }
 
-        // Final progress display
+        // Final progress
         displayProgress(fileSize, fileSize, totalTime);
         
         showDetailedStats(totalTime);
@@ -491,7 +582,7 @@ long long parseSizeInput(const string& input) {
     if (unit == "TB") return static_cast<long long>(value * 1024LL * 1024LL * 1024LL * 1024LL);
     if (unit == "PB") return static_cast<long long>(value * 1024LL * 1024LL * 1024LL * 1024LL * 1024LL);
     
-    return static_cast<long long>(value * 1024 * 1024); // Default: MB
+    return static_cast<long long>(value * 1024 * 1024);
 }
 
 int main(int argc, char* argv[]) {
@@ -502,7 +593,7 @@ int main(int argc, char* argv[]) {
     
     string fileName;
     string sizeInput;
-    int threads = 0; // Auto-detect
+    int threads = 0;
     int bufferMB = 32;
     bool randomData = false;
     bool turbo = true;
