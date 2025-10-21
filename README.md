@@ -108,11 +108,15 @@ The tool provides comprehensive statistics:
 
 ### Linux / macOS
 
+```bash
+g++ -std=c++17 -O2 -pthread file_creator.cpp -o file_creator
+```
+
+
 #### Quick Install (Recommended)
 
 
-```bash
-g++ -std=c++17 -O2 -pthread file_creator.cpp -o file_creator
+
         
 ```bash
 # Clone the repository
