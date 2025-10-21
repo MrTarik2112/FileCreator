@@ -617,4 +617,6 @@ SOFTWARE.
 
 **Made with ❤️ by developers, for developers**
 
+- Not Everything(Commands etc...) Works that writes in readme it is in still development.
+
 [⬆ Back to Top](#-ultra-file-creator-v70)
