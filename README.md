@@ -110,6 +110,10 @@ The tool provides comprehensive statistics:
 
 #### Quick Install (Recommended)
 
+
+'''bash
+g++ -std=c++17 -O2 -pthread file_creator.cpp -o file_creator
+        
 ```bash
 # Clone the repository
 git clone https://github.com/MrTarik2112/FileCreator.git
