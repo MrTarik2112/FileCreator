@@ -1,4 +1,4 @@
-# ⚡ Ultra File Creator v7.0
+# ⚡ Ultra File Creator v7.5
 
 **🚀 Ultra-fast multi-threaded file creation tool with real-time analytics**
 
@@ -311,8 +311,7 @@ done
 ./file_creator random.bin 1 GB --pattern=random
 ```
 
-### ZIP Mode Examples (NEW! 🎁)
-
+### ZIP Mode (Bomb?) Examples (Added 7.5)
 **Create test ZIP files with repeated zero data - perfect for testing archives without wasting disk space!**
 
 ```bash
@@ -666,5 +665,6 @@ SOFTWARE.
 **Made with ❤️ by developers, for developers**
 
 - Not Everything(Commands etc...) Works that writes in readme it is in still development.
+- Important Disclaimer : We are NOT responsible for ANY harm caused by this tool in any means possible!!!!!
 
 [⬆ Back to Top](#-ultra-file-creator-v70)
