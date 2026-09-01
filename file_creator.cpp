@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <zip.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -102,7 +103,7 @@ struct AdvancedStats {
         if (!speedSamples.empty()) {
             double sum = 0;
             int samples = min(static_cast<int>(speedSamples.size()), 50);
-            for (int i = speedSamples.size() - samples; i < speedSamples.size(); i++) {
+            for (int i = static_cast<int>(speedSamples.size()) - samples; i < static_cast<int>(speedSamples.size()); i++) {
                 sum += speedSamples[i];
             }
             avgSpeed = sum / samples;
@@ -562,6 +563,116 @@ public:
         showDetailedStats(totalTime);
         return true;
     }
+
+    bool createTestZip(const string& outputPath, size_t targetSize) {
+        showBanner();
+        
+        cout << Color::BRIGHT_CYAN << "  ⚡ Initializing ZIP creation with test data...\n" << Color::RESET;
+        cout << Color::BRIGHT_BLACK << "  ═══════════════════════════════════════════════════════════════════\n" << Color::RESET;
+        cout << "\n";
+        
+        cout << Color::BRIGHT_WHITE << "  📦 Creating ZIP: " << Color::BRIGHT_GREEN << outputPath << Color::RESET << "\n";
+        cout << Color::BRIGHT_WHITE << "  📏 Target Size : " << Color::BRIGHT_YELLOW << formatBytes(targetSize) << Color::RESET << "\n\n";
+        
+        int errorp = 0;
+        zip_t *archive = zip_open(outputPath.c_str(), ZIP_CREATE | ZIP_TRUNCATE, &errorp);
+        
+        if (!archive) {
+            cout << Color::BRIGHT_RED << "  ❌ ERROR: Cannot create ZIP file (error code: " << errorp << ")\n" << Color::RESET;
+            return false;
+        }
+        
+        display.initialize();
+        
+        auto startTime = steady_clock::now();
+        
+        // Create repeated data buffer (1MB chunks of zeros)
+        const size_t chunkSize = 1024 * 1024; // 1MB
+        vector<char> dataBuffer(chunkSize, 0);
+        
+        size_t totalWritten = 0;
+        int fileCounter = 0;
+        
+        try {
+            while (totalWritten < targetSize) {
+                size_t remaining = targetSize - totalWritten;
+                size_t toWrite = min(chunkSize, remaining);
+                
+                // Create file entry in ZIP
+                stringstream entryName;
+                entryName << "data_" << fileCounter++ << ".bin";
+                
+                zip_source_t *source = zip_source_buffer(archive, dataBuffer.data(), toWrite, 0);
+                if (!source) {
+                    cout << Color::BRIGHT_RED << "\n  ❌ ERROR: Cannot create ZIP source!\n" << Color::RESET;
+                    zip_close(archive);
+                    return false;
+                }
+                
+                if (zip_file_add(archive, entryName.str().c_str(), source, ZIP_FL_ENC_UTF_8) < 0) {
+                    cout << Color::BRIGHT_RED << "\n  ❌ ERROR: Cannot add file to ZIP: " << zip_strerror(archive) << "\n" << Color::RESET;
+                    zip_source_free(source);
+                    zip_close(archive);
+                    return false;
+                }
+                
+                totalWritten += toWrite;
+                
+                // Update progress
+                auto now = steady_clock::now();
+                double elapsed = duration<double>(now - startTime).count();
+                displayProgress(totalWritten, targetSize, elapsed);
+            }
+            
+            // Close and write ZIP
+            cout << "\n" << Color::BRIGHT_CYAN << "  ✓ Writing ZIP to disk...\n" << Color::RESET;
+            display.clearProgress();
+            
+            if (zip_close(archive) < 0) {
+                cout << Color::BRIGHT_RED << "  ❌ ERROR: Cannot close ZIP file!\n" << Color::RESET;
+                return false;
+            }
+            
+            auto endTime = steady_clock::now();
+            double totalTime = duration<double>(endTime - startTime).count();
+            
+            display.cleanup();
+            
+            // Show completion stats
+            display.newLine();
+            cout << "\n";
+            cout << Color::BOLD << Color::BRIGHT_GREEN;
+            cout << "  ╔═══════════════════════════════════════════════════════════════════════╗\n";
+            cout << "  ║                                                                       ║\n";
+            cout << "  ║                   " << Color::BRIGHT_WHITE << "✅ ZIP CREATED SUCCESSFULLY ✅" << Color::BRIGHT_GREEN << "                   ║\n";
+            cout << "  ║                                                                       ║\n";
+            cout << "  ╚═══════════════════════════════════════════════════════════════════════╝\n";
+            cout << Color::RESET << "\n";
+            
+            cout << Color::BRIGHT_CYAN << "  ╭─ " << Color::BRIGHT_WHITE << "📊 ZIP STATISTICS" << Color::BRIGHT_CYAN << " ─────────────────────────────────────────────╮\n" << Color::RESET;
+            cout << Color::BRIGHT_WHITE << "  │\n";
+            cout << "  │  " << Color::BRIGHT_WHITE << "✓ ZIP File      : " << Color::BRIGHT_GREEN << outputPath << Color::RESET << "\n";
+            cout << "  │  " << Color::BRIGHT_WHITE << "✓ Compressed    : " << Color::BRIGHT_YELLOW << formatBytes(totalWritten) << Color::RESET << "\n";
+            cout << "  │  " << Color::BRIGHT_WHITE << "✓ Files Count   : " << Color::BRIGHT_MAGENTA << fileCounter << Color::RESET << "\n";
+            cout << "  │  " << Color::BRIGHT_WHITE << "✓ Elapsed Time  : " << Color::BRIGHT_BLUE << formatDuration(totalTime) << Color::RESET << "\n";
+            
+            if (totalTime > 0) {
+                double speed = totalWritten / totalTime;
+                cout << "  │  " << Color::BRIGHT_WHITE << "⚡ Speed        : " << Color::BRIGHT_CYAN << formatBytes(static_cast<long long>(speed)) << "/s" << Color::RESET << "\n";
+            }
+            
+            cout << Color::BRIGHT_WHITE << "  │\n";
+            cout << "  ╰───────────────────────────────────────────────────────────────────╯\n";
+            cout << Color::RESET << "\n";
+            
+            return true;
+            
+        } catch (const exception& e) {
+            cout << Color::BRIGHT_RED << "\n  ❌ ERROR: Exception occurred: " << e.what() << "\n" << Color::RESET;
+            zip_close(archive);
+            return false;
+        }
+    }
 };
 
 long long parseSizeInput(const string& input) {
@@ -593,31 +704,52 @@ int main(int argc, char* argv[]) {
     
     string fileName;
     string sizeInput;
+    string outputPath;
     int threads = 0;
     int bufferMB = 32;
     bool randomData = false;
     bool turbo = true;
+    bool testZipMode = false;
     
-    if (argc >= 3) {
-        fileName = argv[1];
-        sizeInput = string(argv[2]) + (argc > 3 ? " " + string(argv[3]) : "");
+    // Parse command line arguments
+    for (int i = 1; i < argc; i++) {
+        string arg = argv[i];
         
-        if (argc >= 5) {
-            threads = atoi(argv[4]);
+        if (arg == "--test-zip") {
+            testZipMode = true;
+        }
+        else if (arg == "--size" && i + 1 < argc) {
+            sizeInput = argv[++i];
+        }
+        else if (arg == "--output" && i + 1 < argc) {
+            outputPath = argv[++i];
+        }
+        else if (arg == "--threads" && i + 1 < argc) {
+            threads = atoi(argv[++i]);
             if (threads < 1) threads = 1;
             if (threads > 64) threads = 64;
         }
-        
-        if (argc >= 6) {
-            bufferMB = atoi(argv[5]);
+        else if (arg == "--buffer" && i + 1 < argc) {
+            bufferMB = atoi(argv[++i]);
             if (bufferMB < 1) bufferMB = 16;
             if (bufferMB > 256) bufferMB = 256;
         }
-        
-        if (argc >= 7 && string(argv[6]) == "--random") {
+        else if (arg == "--random") {
             randomData = true;
         }
-    } else {
+        else if (i == 1) {
+            // Legacy positional argument: filename
+            fileName = arg;
+        }
+        else if (i == 2) {
+            // Legacy positional argument: size
+            sizeInput = arg + (i + 1 < argc ? " " + string(argv[i + 1]) : "");
+            i++; // Skip next arg
+        }
+    }
+    
+    // Legacy mode: if no --test-zip or --size specified, use wizard
+    if (!testZipMode && sizeInput.empty()) {
         cout << "\n";
         cout << Color::BOLD << Color::BRIGHT_MAGENTA;
         cout << "  ╔═══════════════════════════════════════════════════════════════════════╗\n";
@@ -671,6 +803,24 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
+    // Handle ZIP mode
+    if (testZipMode) {
+        if (outputPath.empty()) {
+            outputPath = "test_data.zip";
+        }
+        
+        TurboFileCreator creator(fileName.empty() ? "temp" : fileName, fileSize, threads, bufferMB, randomData, turbo);
+        
+        if (creator.createTestZip(outputPath, fileSize)) {
+            cout << Color::BRIGHT_GREEN << Color::BOLD << "  🎉 SUCCESS! ZIP file created with test data!\n\n" << Color::RESET;
+            return 0;
+        } else {
+            cout << Color::BRIGHT_RED << Color::BOLD << "  💥 FAILED! ZIP operation could not be completed.\n\n" << Color::RESET;
+            return 1;
+        }
+    }
+    
+    // Handle normal file creation mode
     TurboFileCreator creator(fileName, fileSize, threads, bufferMB, randomData, turbo);
     
     if (creator.execute()) {

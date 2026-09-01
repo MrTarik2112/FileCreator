@@ -112,6 +112,17 @@ The tool provides comprehensive statistics:
 g++ -std=c++17 -O2 -pthread file_creator.cpp -o file_creator
 ```
 
+**With ZIP Support (for --test-zip feature)**
+
+```bash
+# Install libzip development library
+sudo apt-get install libzip-dev          # Debian/Ubuntu
+brew install libzip                       # macOS
+apk add libzip-dev                        # Alpine Linux
+
+# Compile with ZIP support
+g++ -std=c++17 -O2 -pthread file_creator.cpp -o file_creator -lzip
+```
 
 #### Quick Install (Recommended)
 
@@ -212,6 +223,11 @@ file_creator <filename> <size> [threads] [buffer_mb] [options]
 
 | Option | Description |
 |--------|-------------|
+| `--test-zip` | Create ZIP file with test data instead of regular file |
+| `--size` | Target file/ZIP size (e.g., 100MB, 1GB) - used with --test-zip |
+| `--output` | Output ZIP file path (default: test_data.zip) - used with --test-zip |
+| `--threads` | Number of worker threads | 0-256 |
+| `--buffer` | Buffer size per thread (MB) | 16-512 |
 | `--random` | Use random data instead of zeros |
 | `--verify` | Verify file size after creation |
 | `--verbose` | Enable detailed operation logs |
@@ -294,6 +310,38 @@ done
 ./file_creator zeros.bin 1 GB --pattern=zeros
 ./file_creator random.bin 1 GB --pattern=random
 ```
+
+### ZIP Mode Examples (NEW! 🎁)
+
+**Create test ZIP files with repeated zero data - perfect for testing archives without wasting disk space!**
+
+```bash
+# Create 10 MB test ZIP
+./file_creator --test-zip --size 10MB --output test_data.zip
+
+# Create 100 MB test ZIP
+./file_creator --test-zip --size 100MB --output archive.zip
+
+# Create 1 GB test ZIP
+./file_creator --test-zip --size 1GB --output large_archive.zip
+
+# Quick test with default output (test_data.zip)
+./file_creator --test-zip --size 50MB
+```
+
+**How it works:**
+- Efficient memory-based ZIP creation using `libzip`
+- Data stays in RAM, never writes temporary files to disk
+- 1 MB files are added to ZIP until target size is reached
+- Automatic progress tracking with speed metrics
+- Excellent compression ratio (10MB raw → ~12KB compressed with zeros)
+
+**Use cases:**
+- 🧪 Test archive handling with large files
+- ⚡ Benchmark ZIP extraction speed
+- 💾 Create test data without wasting storage
+- 🔍 Test backup systems with large archives
+- 📊 Performance testing
 
 ---
 
