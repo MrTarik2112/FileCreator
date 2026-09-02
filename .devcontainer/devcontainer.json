@@ -1,5 +1,5 @@
 {
   "name": "TRK's-box",
-  "image": "localhost/genel-dev-container",
+  "image": "genel-dev-container:latest",
   "containerUser": "vscode"
 }
